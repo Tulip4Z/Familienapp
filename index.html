@@ -282,6 +282,7 @@ body.gate .tabs{display:none}
 <script>
 {
 const KEY='familienapp-v1';
+const APP_V='2026-11-22-7';
 const DL=['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const REM={'':'Keine Erinnerung','0':'Zur Startzeit','10':'10 Min. vorher','30':'30 Min. vorher','60':'1 Std. vorher','120':'2 Std. vorher','1440':'1 Tag vorher'};
@@ -401,7 +402,7 @@ function vDash(){
   <div class="tile w2"><div class="lb"><span>Abendessen</span>${mt&&mt>now?`<span>${until(mt)}</span>`:''}</div>
     <button class="mealt" data-act="meal" data-d="${s}" style="margin-top:8px"><span class="big">${esc(m.time)}</span><span><b>${esc(m.dish||m.type||'Noch nicht geplant')}</b>${m.dish&&m.type?`<span>${esc(m.type)}</span>`:''}</span></button></div>
   ${(()=>{const h=dog(),wk=S.dog.walks.filter(w=>w.date===s),po=S.projects.filter(p=>p.status!=='fertig'),nd=po.filter(p=>p.due).sort((a,b)=>a.due.localeCompare(b.due))[0];
-    return (h?`<button class="tile dog" data-act="tab" data-v="hund"><div class="lb"><span>${esc(h.name)}</span></div><div class="big">${wk.length}×</div><span>${wk.length?'Gassi · zuletzt '+esc(wk.sort((a,b)=>a.time.localeCompare(b.time))[wk.length-1].time):'Heute noch nicht Gassi'}</span><div class="pps"><span class="pp">${S.dog.feed[s+'|am']?'✓':'○'} Futter früh</span><span class="pp">${S.dog.feed[s+'|pm']?'✓':'○'} abends</span></div></button>`:'')
+    return dogTile()
     +`<button class="tile" data-act="tab" data-v="projekte"><div class="lb"><span>Projekte</span></div><div class="big">${po.length}</div><span>${nd?'Nächstes: '+esc(nd.title)+' bis '+fmt(pd(nd.due)):po.length?'offen':'Alles erledigt'}</span></button>`})()}
   <div class="tile soft w2"><div class="lb"><span>Morgen · ${DL[add(t,1).getDay()]}</span></div><b style="margin-top:6px;font-weight:500">${mtxt||'Noch nichts geplant.'}</b></div>
   </section>`;
@@ -613,7 +614,7 @@ function vMehr(){
   const po=S.projects.filter(p=>p.status!=='fertig'),pa=S.projects.filter(p=>p.status==='arbeit').length,h=dog(),wk=S.dog.walks.filter(w=>w.date===ds(today())).length;
   return `<section class="bento">
   <button class="tile" data-act="tab" data-v="projekte"><div class="lb"><span>Projekte</span></div><div class="big">${po.length}</div><span>${po.length?'offen'+(pa?' · '+pa+' in Arbeit':''):'Alles erledigt'}</span></button>
-  ${h?`<button class="tile dog" data-act="tab" data-v="hund"><div class="lb"><span>${esc(h.name)}</span></div><div class="big">${wk}×</div><span>Gassi heute</span></button>`:''}
+  ${dogTile()}
   ${(()=>{const o=S.loans.filter(l=>!loanDone(l)),w=o.filter(l=>myTurn(l)).length;return `<button class="tile${w?' acc':''}" data-act="tab" data-v="finanzen"><div class="lb"><span>Finanzen</span></div><div class="big">${o.length}</div><span>${w?w+' wartet auf dich':o.length===1?'offener Betrag':'offene Beträge'}</span></button>`})()}
   ${(()=>{const vis=S.notes.filter(noteVisible),p=vis.find(n=>n.pin);return `<button class="tile" data-act="tab" data-v="notizen" style="background:#e9ff9a"><div class="lb"><span>Notizen</span></div><div class="big">${vis.length}</div><span>${p?'Angeheftet: '+esc(p.title||'Ohne Titel'):vis.length===1?'Notiz':'Notizen'}</span></button>`})()}
   <button class="tile w2 soft" data-act="tab" data-v="einstellungen"><div class="lb"><span>Einstellungen</span></div><b style="margin-top:6px">Familie, Läden, Mahlzeiten, Erinnerungen</b></button>
@@ -645,20 +646,13 @@ function vProjekt(){
   <h2>Notizen</h2><textarea data-pset="note" placeholder="Maße, Telefonnummern, Ideen …" style="font:inherit;font-size:16px">${esc(p.note)}</textarea>
   <div class="row"><button class="btn warn" data-act="delProj">Projekt löschen</button></div>`;
 }
+function dogNext(){const h=dog();if(!h)return null;return S.events.filter(e=>(e.who||[]).includes(h.id)).map(e=>({e,n:nextOcc(e)})).filter(x=>x.n).sort((a,b)=>a.n.localeCompare(b.n))[0]||null}
+function dogTile(){const h=dog();if(!h)return'';const x=dogNext();
+  return `<button class="tile dog" data-act="tab" data-v="hund"><div class="lb"><span>${esc(h.name)}</span></div><div class="big" style="font-size:30px">${x?(x.n===ds(today())?'Heute':x.n===ds(add(today(),1))?'Morgen':fmt(pd(x.n))):'–'}</div><span>${x?esc(x.e.title):'Keine Termine'}</span></button>`}
 function vHund(){
   const h=dog();if(!h)return `${back('mehr','Mehr')}<p class="empty">Kein Hund angelegt. In den Einstellungen bei einem Mitglied die Rolle „Hund“ wählen.</p>`;
-  const s=ds(today()),wk=S.dog.walks.filter(w=>w.date===s).sort((a,b)=>a.time.localeCompare(b.time));
-  const last7=new Set([...Array(7)].map((_,i)=>ds(add(today(),-i)))),cnt={};people().forEach(m=>cnt[m.id]=0);
-  S.dog.walks.forEach(w=>{if(last7.has(w.date)&&cnt[w.who]!=null)cnt[w.who]++});const mx=Math.max(1,...Object.values(cnt));
-  const fd=k=>{const w=member(S.dog.feed[s+'|'+k]);return `<button class="tile${w?' fed':''}" data-act="feed" data-k="${k}"><div class="lb"><span>Futter ${k==='am'?'morgens':'abends'}</span></div><div class="big">${w?'✓':'–'}</div><span>${w?esc(w.name):'Noch nicht'}</span></button>`};
   const evs=S.events.filter(e=>(e.who||[]).includes(h.id)).map(e=>({e,n:nextOcc(e)})).filter(x=>x.n).sort((a,b)=>a.n.localeCompare(b.n));
-  return `${back('mehr','Mehr')}<section class="bento" style="margin-top:8px">
-  <div class="tile dark w2"><div class="lb"><span>Gassi heute</span>${wk.length?`<span class="chipc">zuletzt ${esc(wk[wk.length-1].time)}</span>`:''}</div><div class="big">${wk.length}×</div>
-    ${wk.length?`<ul class="walks">${wk.map(w=>`<li><span>${esc(w.time)}</span><b>${esc(member(w.who)?.name||'?')}</b><button class="ib" data-act="walkDel" data-id="${w.id}" aria-label="Eintrag löschen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('')}</ul>`:''}
-    <button class="btn lime" data-act="walk" style="margin-top:12px">Gassi eintragen</button></div>
-  ${fd('am')}${fd('pm')}
-  </section>
-  <h2>Gassi, letzte 7 Tage</h2><div class="bars">${people().map(m=>`<div><b>${esc(m.name)}</b><i><em style="width:${cnt[m.id]/mx*100}%;background:${m.color}"></em></i><span>${cnt[m.id]}</span></div>`).join('')}</div>
+  return `${back('mehr','Mehr')}<p class="note" style="margin-top:0">Gassi und Füttern laufen über die To-dos, z. B. mit der Vorlage „Hunderunde“.</p>
   <h2>Termine für ${esc(h.name)}</h2>
   ${evs.length?`<ul class="evs todo" style="padding:4px 12px">${evs.map(({e,n})=>`<li style="min-height:0;padding:0"><button data-act="editEv" data-id="${e.id}" style="border:0"><span class="t">${fmt(pd(n))}</span><span>${esc(e.title)}${e.repeat!=='none'?`<span class="rep">↻ ${REP[e.repeat]}</span>`:''}</span></button></li>`).join('')}</ul>`:'<p class="note">Noch keine – z. B. Impfung, Wurmkur oder Tierarzt.</p>'}
   <button class="add" data-act="dogEv">+ Termin für ${esc(h.name)}</button>
@@ -687,6 +681,7 @@ function vFamilie(){
   <div class="row"><button class="btn${pushOn()?'':' pri'}" data-act="push">${pushOn()?'Push ist an':'Push-Nachrichten einschalten'}</button><button class="btn" data-act="pushTest">Test-Nachricht</button><button class="btn" data-act="pwSheet">Passwort ändern</button><button class="btn warn" data-act="logout">Abmelden</button></div>
   <p class="note">Auf dem iPhone gehen Push-Nachrichten nur, wenn die App über Teilen → „Zum Home-Bildschirm“ geöffnet wird.</p>`:''}
   <h2>Erinnerungen</h2><p class="note">Fällige Termine erscheinen oben in der App, ab 16 Uhr auch offene To-dos.${CLOUD?'':' Push-Nachrichten bei geschlossener App kommen mit der GitHub-Version.'}</p>
+  <p class="note" style="margin-top:28px">App-Version ${APP_V}</p>
   ${CLOUD?'':`<div class="row"><button class="btn" data-act="notify">${window.Notification&&Notification.permission==='granted'?'Benachrichtigungen sind an':'Benachrichtigungen erlauben'}</button></div>`}`;
 }
 const V={woche:[vWoche,'Heute'],kalender:[vKalender,'Kalender'],dienste:[vDienste,'To-dos'],essen:[vEssen,'Essensplan'],einkauf:[vEinkauf,'Einkaufsliste'],mehr:[vMehr,'Mehr'],finanzen:[vFinanzen,'Finanzen'],notizen:[vNotizen,'Notizen'],notiz:[vNotiz,'Notiz'],einstellungen:[vFamilie,'Einstellungen'],projekte:[vProjekte,'Projekte'],projekt:[vProjekt,'Projekt'],hund:[vHund,'Hund']};
@@ -979,6 +974,8 @@ const MAPS={meals:'meals',hist:'shopHist',feed:'dog.feed'};
 const ONE={rules:'rules',mealTypes:'mealTypes',doginfo:'dog.info'};
 const getP=p=>p.split('.').reduce((o,k)=>o==null?o:o[k],S);
 const setP=(p,v)=>{const ks=p.split('.'),l=ks.pop();let o=S;for(const k of ks)o=o[k]??(o[k]={});o[l]=v};
+/* Nur Schlüssel anfassen, die diese App-Version kennt – ältere Versionen dürfen neue Bereiche nie löschen */
+function known(k){const i=k.indexOf(':'),c=i<0?k:k.slice(0,i);return i<0?!!ONE[c]:!!(COLL[c]||MAPS[c])}
 function flat(){const m={};
   for(const[c,p]of Object.entries(COLL))for(const it of getP(p)||[])if(it&&it.id)m[c+':'+it.id]=canon(it);
   for(const[c,p]of Object.entries(MAPS)){const o=getP(p)||{};for(const k in o)m[c+':'+k]=canon(o[k])}
@@ -998,7 +995,7 @@ async function pushNow(){
   if(!sb||!session||!META.ever)return;if(pushing){again=true;return}pushing=true;
   try{const cur=flat(),rows=[];
     for(const k in cur)if(cur[k]!==synced[k])rows.push({k,v:JSON.parse(cur[k]),deleted:false});
-    for(const k in synced)if(!(k in cur))rows.push({k,v:null,deleted:true});
+    for(const k in synced)if(!(k in cur)&&known(k))rows.push({k,v:null,deleted:true});
     const now=new Date().toISOString();
     for(let i=0;i<rows.length;i+=400){const part=rows.slice(i,i+400);
       const{error}=await sb.from('items').upsert(part.map(r=>({...r,updated_at:now})));if(error)throw error;
@@ -1011,7 +1008,8 @@ async function fetchAll(){let all=[];for(let f=0;;f+=1000){const{data,error}=awa
 function blankS(){const b=seed();Object.assign(b,{members:[],events:[],chores:[],tasks:[],shop:[],stores:[],projects:[],loans:[],notes:[],meals:{},shopHist:{},dog:{walks:[],feed:{},info:''}});return b}
 async function fullSync(){
   setSync('busy');
-  const rows=await fetchAll(),remote={};for(const r of rows)if(!r.deleted)remote[r.k]=r.v;
+  const rows=await fetchAll(),remote={};for(const r of rows)if(!r.deleted&&known(r.k))remote[r.k]=r.v;
+  for(const k in synced)if(!known(k))delete synced[k];
   if(!META.ever){
     if(Object.keys(remote).length){S=blankS();for(const k in remote)applyKey(k,remote[k]);synced={};for(const k in remote)synced[k]=canon(remote[k])}
     else synced={};
@@ -1024,7 +1022,7 @@ async function fullSync(){
   await pushNow();setSync('live');
 }
 function applyRemote(row){
-  if(!row||!row.k)return false;const k=row.k,rs=row.deleted?undefined:canon(row.v),cur=flat(),ls=cur[k];
+  if(!row||!row.k||!known(row.k))return false;const k=row.k,rs=row.deleted?undefined:canon(row.v),cur=flat(),ls=cur[k];
   if(rs===ls){if(rs===undefined)delete synced[k];else synced[k]=rs;return false}
   if(ls!==synced[k])return false;
   applyKey(k,row.deleted?undefined:row.v);if(rs===undefined)delete synced[k];else synced[k]=rs;
@@ -1100,7 +1098,6 @@ addEventListener('online',()=>{if(sb&&session)fullSync().then(()=>softRender()).
 go(location.hash.slice(1)||'woche');
 if(CLOUD)cloudStart();
 /* Update-Prüfung: holt die aktuelle index.html am Cache vorbei und lädt neu, wenn es eine neuere Version gibt */
-const APP_V='2026-11-22-5';
 async function checkUpdate(){
   if(!CLOUD||!/^https?:/.test(location.protocol))return;
   try{const r=await fetch(location.pathname+'?check='+Date.now(),{cache:'no-store'});if(!r.ok)return;
