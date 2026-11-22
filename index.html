@@ -1039,6 +1039,19 @@ addEventListener('online',()=>{if(sb&&session)fullSync().then(()=>softRender()).
 
 go(location.hash.slice(1)||'woche');
 if(CLOUD)cloudStart();
+/* Update-Prüfung: holt die aktuelle index.html am Cache vorbei und lädt neu, wenn es eine neuere Version gibt */
+const APP_V='2026-11-22-4';
+async function checkUpdate(){
+  if(!CLOUD||!/^https?:/.test(location.protocol))return;
+  try{const r=await fetch(location.pathname+'?check='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+    const m=(await r.text()).match(/const APP_V='([^']+)'/);if(!m||m[1]===APP_V)return;
+    const last=+sessionStorage.getItem('fam-upd')||0;if(Date.now()-last<60000)return;sessionStorage.setItem('fam-upd',Date.now());
+    if(!sh.hidden||document.activeElement?.matches('input,select,textarea')){toast('Neue Version da – beim nächsten Öffnen aktiv');return}
+    location.replace(location.pathname+'?v='+m[1]+location.hash);
+  }catch(e){}
+}
+setTimeout(checkUpdate,1500);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkUpdate()});
 tick();setInterval(()=>{tick();if(view==='woche'&&sh.hidden&&!document.activeElement?.matches('input,select,textarea'))render()},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();if(sh.hidden&&!gate)render();if(sb&&session&&META.ever)fullSync().then(()=>{softRender();if(!chan||chan.state!=='joined')subscribe()}).catch(()=>setSync('off'))}});
 }
