@@ -205,7 +205,8 @@ label.f>span{display:block;margin-bottom:5px}
 .lmain small{color:var(--mute);font-size:14px}
 .lst{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:14px;color:var(--mute)}
 .lst .ok{color:var(--ink);font-weight:600}
-.lact{display:flex;gap:8px;flex-wrap:wrap}.lact .btn{background:var(--bg)}.lact .btn.lime{background:var(--lime)}
+.lact{display:flex;gap:8px;flex-wrap:wrap}.lact .btn.warnb{background:var(--pink);color:#fff}.lact .btn.ghostw{background:none;color:var(--mute);margin-left:auto}
+.lst .warnt{color:var(--redd);font-weight:600}.lact .btn{background:var(--bg)}.lact .btn.lime{background:var(--lime)}
 .bars.net div{grid-template-columns:6em minmax(0,1fr)}.bars.net span{text-align:left;font:500 15px Inter,sans-serif;color:var(--mute)}
 .back{display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:6px 8px 6px 0;min-height:44px;font-weight:600;color:var(--mute)}
 .back svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -472,60 +473,78 @@ const loanDone=l=>!!(l.conf?.from&&l.conf?.to);
 const loanPending=l=>!loanDone(l)&&!!(l.conf?.from||l.conf?.to);
 const sideOf=(l,id)=>l.from===id?'from':l.to===id?'to':'';
 const other=side=>side==='from'?'to':'from';
-const myTurn=l=>loanPending(l)&&(CLOUD?(sideOf(l,ME)&&!l.conf[sideOf(l,ME)]):true);
 const nm=id=>member(id)?.name||'?';
+const isMe=id=>CLOUD?id===ME:true;
+const loanTxt=l=>`${nm(l.from)} hat ${nm(l.to)} ${eur(l.amount)} geliehen${l.what?' ('+l.what+')':''}`;
+/* Wer darf was: angelegt hat es l.by (lokal ohne Konten: alle) */
+const isCreator=l=>!CLOUD||!l.by||l.by===ME;
+const canEdit=l=>isCreator(l)&&!l.del&&!loanDone(l)&&!loanPending(l);
+/* Löschen: wer es angelegt hat beantragt, alle beteiligten anderen bestätigen */
+const delNeeds=l=>l.del?['from','to'].filter(k=>!l.del.ok?.[k]):[];
+const myDelTurn=l=>!!l.del&&delNeeds(l).some(k=>CLOUD?l[k]===ME:true);
+const myPayTurn=l=>loanPending(l)&&!l.del&&(CLOUD?(sideOf(l,ME)&&!l.conf[sideOf(l,ME)]):true);
+const myTurn=l=>myPayTurn(l)||myDelTurn(l);
 let showPaid=false;
-function loanBanner(){if(view!=='woche')return'';const w=S.loans.filter(myTurn);if(!w.length)return'';
-  return `<div class="rem"><div class="ri"><svg viewBox="0 0 24 24"><path d="M4 7h16v10H4zM4 11h16M8 15h3"/></svg><span><b>Bitte bestätigen</b><small>${w.length===1?`${esc(nm(w[0].to))} → ${esc(nm(w[0].from))}: ${eur(w[0].amount)} zurück?`:w.length+' Rückzahlungen warten auf dich'}</small></span><button data-act="tab" data-v="finanzen">Ansehen</button></div></div>`}
+function loanBanner(){if(view!=='woche')return'';const w=S.loans.filter(myTurn);if(!w.length)return'';const l=w[0];
+  const one=myDelTurn(l)?`${nm(l.del.by)} möchte „${loanTxt(l)}“ löschen.`:`${nm(l.conf.from?l.from:l.to)} sagt: ${eur(l.amount)} sind zurückgezahlt.`;
+  return `<div class="rem"><div class="ri"><svg viewBox="0 0 24 24"><path d="M4 7h16v10H4zM4 11h16M8 15h3"/></svg><span><b>Bitte bestätigen</b><small>${w.length===1?esc(one):w.length+' Einträge warten auf dich'}</small></span><button data-act="tab" data-v="finanzen">Ansehen</button></div></div>`}
 function loanCard(l){
-  const done=loanDone(l),pend=loanPending(l),ms=sideOf(l,ME),c=l.conf||{};
-  const marker=c.from&&!c.to?'from':c.to&&!c.from?'to':'';const waitFor=marker?other(marker):'';
-  let act='';
-  if(!done&&!pend&&(!CLOUD||ms))act=`<button class="btn" data-act="loanMark" data-id="${l.id}">Zurückgezahlt</button>`;
-  if(pend){
-    if(!CLOUD||ms===waitFor)act=`<button class="btn lime" data-act="loanOk" data-id="${l.id}">${CLOUD?'Bestätigen':esc(nm(l[waitFor]))+' bestätigt'}</button><button class="btn" data-act="loanNo" data-id="${l.id}">Stimmt nicht</button>`;
-    else if(ms===marker)act=`<button class="btn" data-act="loanUndo" data-id="${l.id}">Zurücknehmen</button>`;
+  const done=loanDone(l),pend=loanPending(l),c=l.conf||{};
+  const marker=c.from&&!c.to?'from':c.to&&!c.from?'to':'',waitFor=marker?other(marker):'';
+  let st='',act='';
+  if(l.del){const need=delNeeds(l);
+    st=`<div class="lst"><span class="warnt">Löschen beantragt von ${esc(nm(l.del.by))}</span>${need.length?`<span>wartet auf ${need.map(k=>esc(nm(l[k]))).join(' und ')}</span>`:''}</div>`;
+    const mine=need.filter(k=>isMe(l[k]));
+    if(mine.length)act=mine.map(k=>`<button class="btn warnb" data-act="delOk" data-id="${l.id}" data-side="${k}">${CLOUD?'Löschen bestätigen':esc(nm(l[k]))+' stimmt zu'}</button>`).join('')+`<button class="btn" data-act="delNo" data-id="${l.id}">Behalten</button>`;
+    else if(isCreator(l))act=`<button class="btn" data-act="delUndo" data-id="${l.id}">Antrag zurückziehen</button>`;
+  }else{
+    if(pend)st=`<div class="lst"><span class="ok">✓ ${esc(nm(l[marker]))} sagt: zurückgezahlt</span><span>wartet auf ${esc(nm(l[waitFor]))}</span></div>`;
+    else if(done)st=`<div class="lst"><span class="ok">✓ Von beiden bestätigt${l.doneAt?' am '+fmt(pd(l.doneAt)):''}</span></div>`;
+    if(!done&&!pend&&(!CLOUD||sideOf(l,ME)))act+=`<button class="btn" data-act="loanMark" data-id="${l.id}">Zurückgezahlt</button>`;
+    if(pend){if(!CLOUD||sideOf(l,ME)===waitFor)act+=`<button class="btn lime" data-act="loanOk" data-id="${l.id}">${CLOUD?'Bestätigen':esc(nm(l[waitFor]))+' bestätigt'}</button><button class="btn" data-act="loanNo" data-id="${l.id}">Stimmt nicht</button>`;
+      else if(sideOf(l,ME)===marker)act+=`<button class="btn" data-act="loanUndo" data-id="${l.id}">Zurücknehmen</button>`}
+    if(isCreator(l)&&!pend)act+=`<button class="btn ghostw" data-act="delAsk" data-id="${l.id}">Löschen …</button>`;
   }
-  return `<div class="loan${done?' done':pend?' pend':''}">
-    <button class="lmain" data-act="loanEdit" data-id="${l.id}"${done?' disabled':''}><span class="lamt">${eur(l.amount)}</span>
-      <span class="lwho"><b>${esc(nm(l.to))}</b> ${done?'hat':'schuldet'} <b>${esc(nm(l.from))}</b>${done?' zurückgezahlt':''}</span>
-      <small>${[l.what?esc(l.what):'',fmt(pd(l.date)),l.due&&!done?'zurück bis '+fmt(pd(l.due)):''].filter(Boolean).join(' · ')}</small></button>
-    ${pend?`<div class="lst"><span class="ok">✓ ${esc(nm(l[marker]))}: zurückgezahlt</span><span>wartet auf ${esc(nm(l[waitFor]))}</span></div>`:done?`<div class="lst"><span class="ok">✓ Von beiden bestätigt${l.doneAt?' am '+fmt(pd(l.doneAt)):''}</span></div>`:''}
-    ${act?`<div class="lact">${act}</div>`:''}</div>`;
+  const ed=canEdit(l);
+  return `<div class="loan${done?' done':pend||l.del?' pend':''}">
+    <${ed?'button':'div'} class="lmain"${ed?` data-act="loanEdit" data-id="${l.id}"`:''}><span class="lamt">${eur(l.amount)}</span>
+      <span class="lwho">${done?`<b>${esc(nm(l.to))}</b> hat <b>${esc(nm(l.from))}</b> alles zurückgezahlt`:`<b>${esc(nm(l.from))}</b> hat <b>${esc(nm(l.to))}</b> Geld geliehen`}</span>
+      <small>${[l.what?esc(l.what):'',fmt(pd(l.date)),l.due&&!done?'zurück bis '+fmt(pd(l.due)):'',l.by?'eingetragen von '+esc(nm(l.by)):''].filter(Boolean).join(' · ')}</small></${ed?'button':'div'}>
+    ${st}${act?`<div class="lact">${act}</div>`:''}</div>`;
 }
 function vFinanzen(){
   const open=S.loans.filter(l=>!loanDone(l)),paid=S.loans.filter(loanDone).sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||''));
-  const wait=open.filter(myTurn),rest=open.filter(l=>!myTurn(l));
+  const wait=S.loans.filter(myTurn),rest=open.filter(l=>!myTurn(l));
   let top='';
   if(CLOUD&&ME){let get=0,owe=0;const per={};
     for(const l of open){if(l.from===ME){get+=l.amount;per[l.to]=(per[l.to]||0)+l.amount}if(l.to===ME){owe+=l.amount;per[l.from]=(per[l.from]||0)-l.amount}}
-    top=`<section class="bento"><div class="tile"><div class="lb"><span>Dir schulden</span></div><div class="big" style="font-size:34px">${eur(get)}</div></div><div class="tile dark"><div class="lb"><span>Du schuldest</span></div><div class="big" style="font-size:34px">${eur(owe)}</div></div></section>
-    ${Object.keys(per).filter(k=>per[k]).length?`<div class="bars net">${Object.entries(per).filter(([,v])=>v).map(([k,v])=>`<div><b>${esc(nm(k))}</b><span>${v>0?'schuldet dir '+eur(v):'du schuldest '+eur(-v)}</span></div>`).join('')}</div>`:''}`;
+    top=`<section class="bento"><div class="tile"><div class="lb"><span>Du bekommst noch</span></div><div class="big" style="font-size:34px">${eur(get)}</div></div><div class="tile dark"><div class="lb"><span>Du musst noch zahlen</span></div><div class="big" style="font-size:34px">${eur(owe)}</div></div></section>
+    ${Object.keys(per).filter(k=>per[k]).length?`<div class="bars net">${Object.entries(per).filter(([,v])=>v).map(([k,v])=>`<div>${v>0?`<b>${esc(nm(k))}</b><span>gibt dir noch ${eur(v)}</span>`:`<b>Du</b><span>gibst ${esc(nm(k))} noch ${eur(-v)}</span>`}</div>`).join('')}</div>`:''}`;
   }else{const net={};for(const l of open){const k=[l.from,l.to].sort().join('|'),sgn=l.from<l.to?1:-1;net[k]=(net[k]||0)+sgn*l.amount}
-    const rows=Object.entries(net).filter(([,v])=>v).map(([k,v])=>{const[a,b]=k.split('|'),cred=v>0?a:b,deb=v>0?b:a;return `<div><b>${esc(nm(deb))}</b><span>schuldet ${esc(nm(cred))} ${eur(Math.abs(v))}</span></div>`});
+    const rows=Object.entries(net).filter(([,v])=>v).map(([k,v])=>{const[a,b]=k.split('|'),cred=v>0?a:b,deb=v>0?b:a;return `<div><b>${esc(nm(deb))}</b><span>gibt ${esc(nm(cred))} noch ${eur(Math.abs(v))}</span></div>`});
     top=rows.length?`<div class="bars net">${rows.join('')}</div>`:'';}
   return `${back('mehr','Mehr')}<div class="row" style="margin:4px 0 14px"><button class="btn pri" data-act="loanNew">+ Geld geliehen</button></div>${top}
   ${wait.length?`<h2>Wartet auf ${CLOUD?'dich':'Bestätigung'}</h2><div class="plist">${wait.map(loanCard).join('')}</div>`:''}
-  <h2>Offen</h2>${rest.length?`<div class="plist">${rest.map(loanCard).join('')}</div>`:`<p class="note">${open.length?'':'Niemand schuldet gerade jemandem etwas.'}</p>`}
-  ${paid.length?`<button class="sh" data-act="showPaid" aria-expanded="${showPaid}" style="--c:#9bd400;margin-top:14px"><b>Erledigt</b><span class="cnt">${paid.length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${showPaid?`<div class="plist">${paid.map(loanCard).join('')}</div>`:''}`:''}
-  <p class="note" style="margin-top:16px">Erledigt ist ein Betrag erst, wenn beide die Rückzahlung bestätigt haben.</p>`;
+  <h2>Offen</h2>${rest.length?`<div class="plist">${rest.map(loanCard).join('')}</div>`:`<p class="note">${open.length?'Alles Offene wartet oben auf dich.':'Gerade ist alles ausgeglichen.'}</p>`}
+  ${paid.filter(l=>!myTurn(l)).length?`<button class="sh" data-act="showPaid" aria-expanded="${showPaid}" style="--c:#9bd400;margin-top:14px"><b>Erledigt</b><span class="cnt">${paid.filter(l=>!myTurn(l)).length}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${showPaid?`<div class="plist">${paid.filter(l=>!myTurn(l)).map(loanCard).join('')}</div>`:''}`:''}
+  <p class="note" style="margin-top:16px">Zurückgezahlt ist ein Betrag erst, wenn beide es bestätigt haben. Ändern kann nur, wer den Eintrag angelegt hat – löschen nur mit Zustimmung der anderen.</p>`;
 }
 function loanSheet(l){
-  const isNew=!l;l=l||{from:ME||people()[0]?.id,to:'',amount:0,what:'',date:ds(today()),due:''};
+  const isNew=!l;if(l&&!canEdit(l))return;l=l||{from:ME||people()[0]?.id,to:'',amount:0,what:'',date:ds(today()),due:''};
   const radios=(n,v)=>people().map(m=>`<label><input type="radio" name="${n}" value="${m.id}"${m.id===v?' checked':''}>${esc(m.name)}</label>`).join('');
-  openSheet(isNew?'Geld geliehen':'Eintrag bearbeiten',`
+  openSheet(isNew?'Geld geliehen':'Eintrag ändern',`
    <label class="f"><span>Wer hat Geld gegeben?</span></label><div class="who-pick">${radios('from',l.from)}</div>
    <label class="f"><span>Wer hat es bekommen?</span></label><div class="who-pick">${radios('to',l.to)}</div>
    <div class="two"><label class="f"><span>Betrag (€)</span><input type="text" inputmode="decimal" name="amount" required value="${l.amount?(l.amount/100).toFixed(2).replace('.',','):''}" placeholder="z. B. 20"></label>
    <label class="f"><span>Datum</span><input type="date" name="date" value="${l.date}"></label></div>
    <label class="f"><span>Wofür?</span><input type="text" name="what" value="${esc(l.what)}" placeholder="z. B. Kino, Tanken"></label>
-   <label class="f"><span>Zurück bis (optional)</span><input type="date" name="due" value="${l.due||''}"></label>`,
+   <label class="f"><span>Zurück bis (optional)</span><input type="date" name="due" value="${l.due||''}"></label>
+   ${isNew?'':'<p class="note">Die anderen Beteiligten bekommen eine Nachricht über die Änderung.</p>'}`,
    f=>{const o={from:f.get('from'),to:f.get('to'),amount:parseEur(f.get('amount')),what:f.get('what').trim(),date:f.get('date')||ds(today()),due:f.get('due')||''};
      if(!o.from||!o.to){toast('Bitte beide Personen wählen');return false}if(o.from===o.to){toast('Geber und Empfänger sind gleich');return false}if(o.amount<=0){toast('Bitte einen Betrag eingeben');return false}
      if(isNew){const n={id:uid(),...o,by:ME||'',conf:{from:false,to:false},doneAt:'',t:Date.now()};S.loans.push(n);
-       notify([o.from,o.to].filter(x=>x!==ME),'Neu in Finanzen',`${nm(o.to)} schuldet ${nm(o.from)} ${eur(o.amount)}${o.what?' ('+o.what+')':''} · eingetragen von ${myName()}`)}
-     else Object.assign(l,o);},
-   isNew?'':`<button type="button" class="btn warn sp" data-act="loanDel" data-id="${l.id}">Löschen</button>`);
+       notify([o.from,o.to].filter(x=>x!==ME),'Neu in Finanzen',`${loanTxt(n)} · eingetragen von ${myName()}`)}
+     else{const was=loanTxt(l);Object.assign(l,o);notify([...new Set([l.from,l.to])].filter(x=>x!==ME),'Eintrag geändert',`Vorher: ${was}. Jetzt: ${loanTxt(l)} · von ${myName()}`)}});
 }
 function loanMarkSheet(l){
   openSheet('Wer bestätigt die Rückzahlung?',`<p class="note">Danach muss die andere Person auch bestätigen.</p><div class="pick">${['from','to'].map(k=>`<button type="button" data-act="loanMarkAs" data-id="${l.id}" data-side="${k}"><i style="--c:${member(l[k])?.color||'#999'}">${esc(nm(l[k]).slice(0,2))}</i>${esc(nm(l[k]))}</button>`).join('')}</div>`,null);
@@ -533,6 +552,15 @@ function loanMarkSheet(l){
 function loanMark(l,side){l.conf={from:false,to:false,[side]:true};save();
   notify([l[other(side)]].filter(x=>x!==ME),'Bitte bestätigen',`${nm(l[side])} sagt: ${eur(l.amount)}${l.what?' ('+l.what+')':''} sind zurückgezahlt. Stimmt das?`);
   toast('Wartet jetzt auf '+nm(l[other(side)]));render()}
+function delAsk(l){
+  if(!isCreator(l))return;
+  const ok={from:CLOUD&&l.from===ME,to:CLOUD&&l.to===ME};
+  l.del={by:ME||'',ok};
+  if(ok.from&&ok.to){S.loans=S.loans.filter(x=>x!==l);save();render();toast('Gelöscht');return}
+  save();const need=delNeeds(l).map(k=>l[k]).filter(x=>x!==ME);
+  notify(need,'Löschen bestätigen?',`${myName()} möchte löschen: ${loanTxt(l)}`);
+  toast('Wartet auf Zustimmung von '+need.map(nm).join(' und '));render();
+}
 function vMehr(){
   const po=S.projects.filter(p=>p.status!=='fertig'),pa=S.projects.filter(p=>p.status==='arbeit').length,h=dog(),wk=S.dog.walks.filter(w=>w.date===ds(today())).length;
   return `<section class="bento">
@@ -784,16 +812,21 @@ document.addEventListener('click',ev=>{
     case'addStore':S.stores.push({id:uid(),name:'Neuer Laden',color:'#ff8a3d',o:Date.now()});save();render();break;
     case'delStore':{if(S.shop.some(x=>x.store===d.id&&!x.done))return toast('Erst die Artikel dort abhaken');S.stores=S.stores.filter(x=>x.id!==d.id);save();render();break}
     case'loanNew':loanSheet(null);break;
-    case'loanEdit':{const l=S.loans.find(x=>x.id===d.id);if(l&&!loanDone(l))loanSheet(l);break}
-    case'loanDel':{const i=S.loans.findIndex(x=>x.id===d.id),x=S.loans[i];S.loans.splice(i,1);save();closeSheet();render();toast('Eintrag gelöscht',()=>S.loans.splice(i,0,x));break}
+    case'loanEdit':{const l=S.loans.find(x=>x.id===d.id);if(l)loanSheet(l);break}
     case'loanMark':{const l=S.loans.find(x=>x.id===d.id);if(CLOUD){const sd=sideOf(l,ME);if(sd)loanMark(l,sd)}else loanMarkSheet(l);break}
     case'loanMarkAs':{const l=S.loans.find(x=>x.id===d.id);closeSheet();loanMark(l,d.side);break}
     case'loanOk':{const l=S.loans.find(x=>x.id===d.id),mk=l.conf.from?'from':'to';l.conf={from:true,to:true};l.doneAt=ds(today());save();
-      notify([l[mk]].filter(x=>x!==ME),'Bestätigt',`${nm(l[other(mk)])} hat bestätigt: ${eur(l.amount)}${l.what?' ('+l.what+')':''} sind erledigt.`);
+      notify([l[mk]].filter(x=>x!==ME),'Bestätigt',`${nm(l[other(mk)])} hat bestätigt: ${eur(l.amount)}${l.what?' ('+l.what+')':''} sind zurückgezahlt.`);
       const r=b.getBoundingClientRect();confetti(r.left+r.width/2,r.top,true);toast('Erledigt – von beiden bestätigt');render();break}
     case'loanNo':{const l=S.loans.find(x=>x.id===d.id),mk=l.conf.from?'from':'to';l.conf={from:false,to:false};save();
-      notify([l[mk]].filter(x=>x!==ME),'Nicht bestätigt',`${nm(l[other(mk)])} sagt: ${eur(l.amount)}${l.what?' ('+l.what+')':''} sind noch offen.`);toast('Wieder offen');render();break}
+      notify([l[mk]].filter(x=>x!==ME),'Nicht bestätigt',`${nm(l[other(mk)])} sagt: ${eur(l.amount)}${l.what?' ('+l.what+')':''} sind noch nicht zurückgezahlt.`);toast('Wieder offen');render();break}
     case'loanUndo':{const l=S.loans.find(x=>x.id===d.id);l.conf={from:false,to:false};save();render();break}
+    case'delAsk':{const l=S.loans.find(x=>x.id===d.id);if(l)delAsk(l);break}
+    case'delOk':{const l=S.loans.find(x=>x.id===d.id);if(!l?.del)break;l.del.ok={...(l.del.ok||{}),[d.side]:true};
+      if(!delNeeds(l).length){const by=l.del.by,txt=loanTxt(l);S.loans=S.loans.filter(x=>x!==l);save();notify([by].filter(x=>x&&x!==ME),'Gelöscht',`${txt} wurde gelöscht.`);toast('Eintrag gelöscht')}
+      else{save();toast('Zugestimmt – wartet noch auf '+delNeeds(l).map(k=>nm(l[k])).join(' und '))}render();break}
+    case'delNo':{const l=S.loans.find(x=>x.id===d.id);if(!l?.del)break;const by=l.del.by;delete l.del;save();notify([by].filter(x=>x&&x!==ME),'Nicht gelöscht',`${myName()} möchte den Eintrag behalten: ${loanTxt(l)}`);toast('Eintrag bleibt');render();break}
+    case'delUndo':{const l=S.loans.find(x=>x.id===d.id);if(l&&isCreator(l)){delete l.del;save();render()}break}
     case'showPaid':showPaid=!showPaid;render();break;
     case'openProj':curProj=d.id;go('projekt');break;
     case'showDone':showDone=!showDone;render();break;
